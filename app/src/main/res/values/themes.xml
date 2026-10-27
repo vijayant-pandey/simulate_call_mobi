@@ -1,0 +1,8 @@
+<resources>
+    <style name="Theme.FakeCall" parent="android:Theme.Material.Light.NoActionBar" />
+
+    <!-- Dark window so the call screen never flashes white while opening -->
+    <style name="Theme.FakeCall.Call" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/call_background</item>
+    </style>
+</resources>
