@@ -74,6 +74,8 @@ class CallService : Service() {
         handler.removeCallbacksAndMessages(null)
         stopRinging()
 
+        val voiceGender = VoiceGender.entries.firstOrNull { it.name == intent.getStringExtra(EXTRA_VOICE_GENDER) }
+            ?: VoiceGender.FEMALE
         val caller = CallerInfo(
             name = intent.getStringExtra(EXTRA_NAME).orEmpty(),
             number = intent.getStringExtra(EXTRA_NUMBER).orEmpty(),
@@ -82,10 +84,9 @@ class CallService : Service() {
                 ?: PhotoStyle.CIRCLE,
             voiceMessage = intent.getStringExtra(EXTRA_VOICE_TEXT).orEmpty(),
             voiceStyle = VoiceStyle(
-                gender = VoiceGender.entries.firstOrNull { it.name == intent.getStringExtra(EXTRA_VOICE_GENDER) }
-                    ?: VoiceGender.FEMALE,
+                gender = voiceGender,
                 variant = intent.getIntExtra(EXTRA_VOICE_VARIANT, 0),
-                pitch = intent.getFloatExtra(EXTRA_VOICE_PITCH, 1f),
+                pitchHz = intent.getFloatExtra(EXTRA_VOICE_PITCH_HZ, voiceGender.defaultPitchHz),
             ),
         )
         val delayMs = intent.getIntExtra(EXTRA_DELAY_SECONDS, 10) * 1000L
@@ -284,7 +285,7 @@ class CallService : Service() {
         private const val EXTRA_VOICE_TEXT = "voice_text"
         private const val EXTRA_VOICE_GENDER = "voice_gender"
         private const val EXTRA_VOICE_VARIANT = "voice_variant"
-        private const val EXTRA_VOICE_PITCH = "voice_pitch"
+        private const val EXTRA_VOICE_PITCH_HZ = "voice_pitch_hz"
         private const val EXTRA_DELAY_SECONDS = "delay"
 
         /** How long the phone rings before the call counts as missed. */
@@ -301,7 +302,7 @@ class CallService : Service() {
                 .putExtra(EXTRA_VOICE_TEXT, caller.voiceMessage)
                 .putExtra(EXTRA_VOICE_GENDER, caller.voiceStyle.gender.name)
                 .putExtra(EXTRA_VOICE_VARIANT, caller.voiceStyle.variant)
-                .putExtra(EXTRA_VOICE_PITCH, caller.voiceStyle.pitch)
+                .putExtra(EXTRA_VOICE_PITCH_HZ, caller.voiceStyle.pitchHz)
                 .putExtra(EXTRA_DELAY_SECONDS, delaySeconds)
             ContextCompat.startForegroundService(context, intent)
         }

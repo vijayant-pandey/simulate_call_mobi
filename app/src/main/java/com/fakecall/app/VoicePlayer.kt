@@ -12,13 +12,28 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import java.util.Locale
 
-enum class VoiceGender { FEMALE, MALE }
+/**
+ * [pitchRangeHz] is what the pitch slider covers. The female range spans Indian women's
+ * voices (typically averaging about 180–250 Hz) with room on either side.
+ * [typicalPitchHz] stands in for a voice whose own pitch hasn't been measured.
+ */
+enum class VoiceGender(
+    val pitchRangeHz: ClosedFloatingPointRange<Float>,
+    val defaultPitchHz: Float,
+    val typicalPitchHz: Float,
+) {
+    FEMALE(150f..320f, defaultPitchHz = 220f, typicalPitchHz = 210f),
+    MALE(85f..180f, defaultPitchHz = 125f, typicalPitchHz = 130f),
+}
 
-/** Which voice reads the message: [variant] picks one of the phone's voices of that gender. */
+/**
+ * Which voice reads the message: [variant] picks one of the phone's voices of that gender,
+ * shifted up or down so it speaks at [pitchHz].
+ */
 data class VoiceStyle(
     val gender: VoiceGender = VoiceGender.FEMALE,
     val variant: Int = 0,
-    val pitch: Float = 1f,
+    val pitchHz: Float = gender.defaultPitchHz,
 )
 
 /** Reads the caller's message aloud with the phone's built-in text-to-speech. */
@@ -71,6 +86,10 @@ class VoicePlayer(context: Context) {
         scheduleNext(FIRST_DELAY_MS)
     }
 
+    /** The measured natural pitch of the voice [style] uses, or null if it hasn't been measured. */
+    fun naturalPitchHz(style: VoiceStyle): Float? =
+        if (ready) voiceFor(style)?.let { knownVoice(it)?.pitchHz } else null
+
     /** How many different voices of [gender] can be chosen from. */
     fun voiceCount(gender: VoiceGender): Int = if (ready) candidates(gender).size.coerceAtLeast(1) else 1
 
@@ -102,17 +121,23 @@ class VoicePlayer(context: Context) {
                 .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
                 .build(),
         )
-        val voices = candidates(style.gender)
-        val voice = voices.getOrNull(style.variant) ?: voices.firstOrNull()
-        Log.d(TAG, "${style.gender} voice: ${voice?.name ?: "default voice, pitch shifted"}, pitch ${style.pitch}")
-        if (voice != null) {
+        val voice = voiceFor(style)
+        val naturalHz = if (voice != null) {
             tts.voice = voice
-            tts.setPitch(style.pitch)
+            knownVoice(voice)?.pitchHz ?: style.gender.typicalPitchHz
         } else {
             // No voice is known to be male or female: shift the pitch of the default voice instead.
             tts.language = Locale.getDefault()
-            tts.setPitch(style.pitch * if (style.gender == VoiceGender.FEMALE) 1.15f else 0.7f)
+            DEFAULT_VOICE_PITCH_HZ
         }
+        // The engine's pitch setting multiplies the voice's own pitch.
+        tts.setPitch(style.pitchHz / naturalHz)
+        Log.d(TAG, "${voice?.name ?: "default voice"}: ${naturalHz.toInt()} Hz -> ${style.pitchHz.toInt()} Hz")
+    }
+
+    private fun voiceFor(style: VoiceStyle): Voice? {
+        val voices = candidates(style.gender)
+        return voices.getOrNull(style.variant) ?: voices.firstOrNull()
     }
 
     private fun availableVoices(): List<Voice> =
@@ -143,10 +168,15 @@ class VoicePlayer(context: Context) {
         SAMSUNG_VOICE.find(name)?.let {
             return if (it.groupValues[1] == "f") VoiceGender.FEMALE else VoiceGender.MALE
         }
-        // Google voices are named like "en-us-x-iom-local"; the three letters identify the speaker.
-        // The English (US and India) entries were checked by measuring each voice's pitch.
-        return GOOGLE_VOICES[name.substringAfter("-x-", "").substringBefore("-")]
+        return knownVoice(voice)?.gender
     }
+
+    /** Google voices are named like "en-us-x-iom-local"; the three letters identify the speaker. */
+    private fun knownVoice(voice: Voice): KnownVoice? =
+        GOOGLE_VOICES[voice.name.lowercase(Locale.ROOT).substringAfter("-x-", "").substringBefore("-")]
+
+    /** [pitchHz] is the voice's measured natural pitch, where known. */
+    private class KnownVoice(val gender: VoiceGender, val pitchHz: Float? = null)
 
     private companion object {
         const val TAG = "VoicePlayer"
@@ -164,26 +194,34 @@ class VoicePlayer(context: Context) {
         const val PAUSE_MS = 2_500L
         const val MAX_VARIANTS = 4
 
+        /** Phones' default voices are usually female, at roughly this pitch. */
+        const val DEFAULT_VOICE_PITCH_HZ = 200f
+
         val SAMSUNG_VOICE = Regex("smt([fm])\\d")
 
+        private val FEMALE = VoiceGender.FEMALE
+        private val MALE = VoiceGender.MALE
+
+        // Pitches were measured from samples rendered on a Samsung Galaxy M51 (Google TTS); the
+        // engine's pitch setting was checked to scale these linearly from 0.6x to 2.4x.
         val GOOGLE_VOICES = mapOf(
             // English (US)
-            "sfg" to VoiceGender.FEMALE, "iob" to VoiceGender.FEMALE, "iog" to VoiceGender.FEMALE,
-            "tpf" to VoiceGender.FEMALE,
-            "iol" to VoiceGender.MALE, "iom" to VoiceGender.MALE, "tpd" to VoiceGender.MALE,
+            "sfg" to KnownVoice(FEMALE, 216f), "iob" to KnownVoice(FEMALE, 194f),
+            "iog" to KnownVoice(FEMALE, 226f), "tpf" to KnownVoice(FEMALE, 198f),
+            "iol" to KnownVoice(MALE, 138f), "iom" to KnownVoice(MALE, 134f), "tpd" to KnownVoice(MALE, 136f),
             // English (UK)
-            "gba" to VoiceGender.FEMALE, "gbc" to VoiceGender.FEMALE, "gbg" to VoiceGender.FEMALE,
-            "gbb" to VoiceGender.MALE, "gbd" to VoiceGender.MALE, "rjs" to VoiceGender.MALE,
+            "gba" to KnownVoice(FEMALE), "gbc" to KnownVoice(FEMALE), "gbg" to KnownVoice(FEMALE),
+            "gbb" to KnownVoice(MALE), "gbd" to KnownVoice(MALE), "rjs" to KnownVoice(MALE),
             // English (India)
-            "ena" to VoiceGender.FEMALE, "enc" to VoiceGender.FEMALE, "ene" to VoiceGender.FEMALE,
-            "ahp" to VoiceGender.FEMALE, "cxx" to VoiceGender.FEMALE,
-            "end" to VoiceGender.MALE,
+            "ena" to KnownVoice(FEMALE, 237f), "enc" to KnownVoice(FEMALE, 276f),
+            "ene" to KnownVoice(FEMALE, 182f), "ahp" to KnownVoice(FEMALE), "cxx" to KnownVoice(FEMALE),
+            "end" to KnownVoice(MALE, 139f),
             // English (Australia)
-            "aua" to VoiceGender.FEMALE, "auc" to VoiceGender.FEMALE,
-            "aub" to VoiceGender.MALE, "aud" to VoiceGender.MALE,
+            "aua" to KnownVoice(FEMALE), "auc" to KnownVoice(FEMALE),
+            "aub" to KnownVoice(MALE), "aud" to KnownVoice(MALE),
             // Hindi
-            "hia" to VoiceGender.FEMALE, "hic" to VoiceGender.FEMALE,
-            "hid" to VoiceGender.MALE, "hie" to VoiceGender.MALE,
+            "hia" to KnownVoice(FEMALE), "hic" to KnownVoice(FEMALE),
+            "hid" to KnownVoice(MALE), "hie" to KnownVoice(MALE),
         )
     }
 }

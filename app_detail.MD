@@ -44,7 +44,12 @@ An optional message the caller "speaks" once you answer.
 - **Text box:** what the caller should say.
 - **Female / Male:** the voice's gender.
 - **Voice 1 / 2 / 3 / 4:** choose between the phone's different voices of that gender (up to 4), in the phone's language.
-- **Pitch slider:** from **Deeper** to **Higher** (0.7× to 1.5×).
+- **Pitch slider in hertz:** set the exact voice pitch in 5 Hz steps. The current value is shown, e.g. "220 Hz".
+  - **Female:** 150–320 Hz (default 220 Hz). This covers Indian women's voices, which typically average about 180–250 Hz, with room either side.
+  - **Male:** 85–180 Hz (default 125 Hz).
+  - Under the slider, the app shows the typical range for that gender and the chosen voice's own natural pitch.
+  - Each voice has a different natural pitch, so the app works out the right adjustment for the chosen voice. 220 Hz sounds like 220 Hz on every voice.
+  - The natural pitches of the Google English (India and US) voices were measured on the test phone: the three Indian female voices are about 237, 276 and 182 Hz, and the Indian male voice about 139 Hz. Tests rendered at 150, 220 and 300 Hz came out within about 5% of the target.
 - **Instant preview:** ▶ plays the message on the loudspeaker. Changing the gender, voice or pitch also plays it immediately, so voices are easy to compare.
 - Uses the phone's built-in text-to-speech: free, and works offline.
 - Google's speech engine is used when installed, because it includes both male and female voices. Some phone engines, such as Samsung's, only include a female voice.
@@ -154,6 +159,7 @@ The app also declares a **query for text-to-speech engines**, so it can find Goo
 | Voice Message | Added the text message, Female/Male voice, earpiece playback, working Speaker button, proximity screen-off |
 | Better male voice | Switched to Google's speech engine, because Samsung's engine only has a female voice |
 | Voice choice and pitch | Added Voice 1–4 and the Deeper/Higher pitch slider, after feedback that the female voice should sound more feminine |
+| Pitch in hertz | The pitch slider now sets the exact pitch in Hz: female 150–320 Hz, covering Indian women's voices; male 85–180 Hz. Each voice's natural pitch was measured so the result is accurate |
 
 ---
 

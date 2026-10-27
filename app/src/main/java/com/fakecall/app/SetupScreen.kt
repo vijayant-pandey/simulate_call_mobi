@@ -74,14 +74,17 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.math.roundToInt
 
 private val DELAYS = listOf(5, 10, 15, 20, 30, 45, 60, 120, 300)
 private val CallGreen = Color(0xFF1E9E55)
+private const val PITCH_STEP_HZ = 5f
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -102,8 +105,8 @@ fun SetupScreen(
     var voiceMessage by rememberSaveable { mutableStateOf("") }
     var voiceGender by rememberSaveable { mutableStateOf(VoiceGender.FEMALE) }
     var voiceVariant by rememberSaveable { mutableIntStateOf(0) }
-    var voicePitch by rememberSaveable { mutableFloatStateOf(1f) }
-    val voiceStyle = VoiceStyle(voiceGender, voiceVariant, voicePitch)
+    var voicePitchHz by rememberSaveable { mutableFloatStateOf(VoiceGender.FEMALE.defaultPitchHz) }
+    val voiceStyle = VoiceStyle(voiceGender, voiceVariant, voicePitchHz)
     var delaySeconds by rememberSaveable { mutableIntStateOf(10) }
     var numberError by rememberSaveable { mutableStateOf(false) }
 
@@ -225,10 +228,11 @@ fun SetupScreen(
                 onMessageChange = { voiceMessage = it },
                 style = voiceStyle,
                 voiceCount = if (voicesReady) previewVoice.voiceCount(voiceGender) else 1,
+                naturalPitchHz = if (voicesReady) previewVoice.naturalPitchHz(voiceStyle) else null,
                 onStyleChange = {
                     voiceGender = it.gender
                     voiceVariant = it.variant
-                    voicePitch = it.pitch
+                    voicePitchHz = it.pitchHz
                 },
                 onPreview = { style ->
                     if (voiceMessage.isNotBlank()) previewVoice.preview(voiceMessage.trim(), style)
@@ -322,6 +326,7 @@ private fun VoiceMessageSection(
     onMessageChange: (String) -> Unit,
     style: VoiceStyle,
     voiceCount: Int,
+    naturalPitchHz: Float?,
     onStyleChange: (VoiceStyle) -> Unit,
     onPreview: (VoiceStyle) -> Unit,
 ) {
@@ -346,7 +351,7 @@ private fun VoiceMessageSection(
             ChoiceRow(
                 options = listOf(VoiceGender.FEMALE to "Female", VoiceGender.MALE to "Male"),
                 selected = style.gender,
-                onSelect = { changeAndPreview(style.copy(gender = it, variant = 0)) },
+                onSelect = { changeAndPreview(VoiceStyle(gender = it)) },
                 modifier = Modifier.weight(1f),
             )
             FilledTonalIconButton(onClick = { onPreview(style) }, enabled = message.isNotBlank()) {
@@ -364,19 +369,35 @@ private fun VoiceMessageSection(
                 )
             }
         }
+        val range = style.gender.pitchRangeHz
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("Pitch", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.width(56.dp))
-            Text("Deeper", style = MaterialTheme.typography.labelSmall)
             Slider(
-                value = style.pitch,
-                onValueChange = { onStyleChange(style.copy(pitch = it)) },
+                value = style.pitchHz.coerceIn(range),
+                onValueChange = { onStyleChange(style.copy(pitchHz = it)) },
                 onValueChangeFinished = { onPreview(style) },
-                valueRange = 0.7f..1.5f,
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(horizontal = 8.dp),
+                valueRange = range,
+                steps = ((range.endInclusive - range.start) / PITCH_STEP_HZ).toInt() - 1,
+                modifier = Modifier.weight(1f),
             )
-            Text("Higher", style = MaterialTheme.typography.labelSmall)
+            Text(
+                "${style.pitchHz.roundToInt()} Hz",
+                style = MaterialTheme.typography.bodyLarge,
+                textAlign = TextAlign.End,
+                modifier = Modifier.width(64.dp),
+            )
+        }
+        Column(Modifier.padding(start = 56.dp)) {
+            val typical = if (style.gender == VoiceGender.FEMALE) "Typical women's voices: 180–250 Hz"
+            else "Typical men's voices: 100–150 Hz"
+            Text(typical, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (naturalPitchHz != null) {
+                Text(
+                    "This voice on its own: ${naturalPitchHz.roundToInt()} Hz",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
     }
 }
