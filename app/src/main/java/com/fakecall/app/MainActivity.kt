@@ -15,6 +15,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
 
 data class PermissionStatus(
     val callLog: Boolean = true,
@@ -27,6 +29,9 @@ data class PermissionStatus(
 class MainActivity : ComponentActivity() {
 
     private var permissions by mutableStateOf(PermissionStatus())
+
+    /** True while this app is still the default SMS app after adding a simulated text. */
+    private var isDefaultSmsApp by mutableStateOf(false)
 
     /** Set once Android stops showing the permission dialog, so we open Settings instead. */
     private var sendToSettings = false
@@ -46,10 +51,13 @@ class MainActivity : ComponentActivity() {
             permissionRequest.launch(missingRuntimePermissions())
         }
 
+        closeWhenCallEnds()
+
         setContent {
             AppTheme {
                 SetupScreen(
                     permissions = permissions,
+                    isDefaultSmsApp = isDefaultSmsApp,
                     onRequestPermissions = ::requestPermissions,
                     onAllowFullScreen = ::openFullScreenSettings,
                 )
@@ -60,6 +68,23 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         refreshPermissions()
+    }
+
+    /**
+     * Closes the app once a call that rang is over (answered, declined or missed), so
+     * hanging up returns to whatever was on screen before instead of to this setup screen.
+     * Cancelling a call that hasn't rung yet keeps the app open.
+     */
+    private fun closeWhenCallEnds() {
+        lifecycleScope.launch {
+            var rang = false
+            CallState.session.collect { session ->
+                when {
+                    session != null -> rang = session.phase != Phase.WAITING
+                    rang -> finishAndRemoveTask()
+                }
+            }
+        }
     }
 
     private fun missingRuntimePermissions(): Array<String> =
@@ -78,6 +103,7 @@ class MainActivity : ComponentActivity() {
             fullScreen = Build.VERSION.SDK_INT < 34 ||
                 getSystemService(NotificationManager::class.java).canUseFullScreenIntent(),
         )
+        isDefaultSmsApp = SmsWriter.isDefaultSmsApp(this)
     }
 
     private fun requestPermissions() {
