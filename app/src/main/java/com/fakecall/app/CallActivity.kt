@@ -1,5 +1,6 @@
 package com.fakecall.app
 
+import android.app.KeyguardManager
 import android.content.Intent
 import android.media.AudioManager
 import android.os.Build
@@ -78,7 +79,7 @@ class CallActivity : ComponentActivity() {
             val session by CallState.session.collectAsState()
             val current = session
             if (current == null || current.phase == Phase.WAITING) {
-                LaunchedEffect(Unit) { finish() }
+                LaunchedEffect(Unit) { unlockAndClose() }
             } else {
                 CallScreen(
                     session = current,
@@ -98,6 +99,23 @@ class CallActivity : ComponentActivity() {
     /** "Answer" tapped on the notification opens this screen with this action. */
     private fun handleAction(intent: Intent?) {
         if (intent?.action == ACTION_ANSWER) CallService.send(this, CallService.ACTION_ANSWER)
+    }
+
+    /**
+     * When the call rang over the lock screen, asks for the fingerprint, face or PIN as
+     * soon as it ends, so hanging up lands on the home screen rather than the lock screen.
+     */
+    private fun unlockAndClose() {
+        val keyguard = getSystemService(KeyguardManager::class.java)
+        if (!keyguard.isKeyguardLocked) return finishAndRemoveTask()
+        keyguard.requestDismissKeyguard(
+            this,
+            object : KeyguardManager.KeyguardDismissCallback() {
+                override fun onDismissSucceeded() = finishAndRemoveTask()
+                override fun onDismissCancelled() = finishAndRemoveTask()
+                override fun onDismissError() = finishAndRemoveTask()
+            },
+        )
     }
 
     private fun showOverLockScreen() {

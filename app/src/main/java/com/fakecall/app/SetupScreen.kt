@@ -90,6 +90,7 @@ private const val PITCH_STEP_HZ = 5f
 @Composable
 fun SetupScreen(
     permissions: PermissionStatus,
+    isDefaultSmsApp: Boolean,
     onRequestPermissions: () -> Unit,
     onAllowFullScreen: () -> Unit,
 ) {
@@ -274,6 +275,8 @@ fun SetupScreen(
                     },
                 )
             }
+
+            SimulateSmsSection(isDefaultSmsApp)
         }
     }
 }
@@ -330,12 +333,7 @@ private fun VoiceMessageSection(
     onStyleChange: (VoiceStyle) -> Unit,
     onPreview: (VoiceStyle) -> Unit,
 ) {
-    // Picking a different voice plays it straight away so voices are easy to compare.
-    fun changeAndPreview(newStyle: VoiceStyle) {
-        onStyleChange(newStyle)
-        onPreview(newStyle)
-    }
-
+    // The voice is only heard before the call when the play button is tapped.
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text("Voice message (optional)", style = MaterialTheme.typography.titleMedium)
         OutlinedTextField(
@@ -351,7 +349,7 @@ private fun VoiceMessageSection(
             ChoiceRow(
                 options = listOf(VoiceGender.FEMALE to "Female", VoiceGender.MALE to "Male"),
                 selected = style.gender,
-                onSelect = { changeAndPreview(VoiceStyle(gender = it)) },
+                onSelect = { onStyleChange(VoiceStyle(gender = it)) },
                 modifier = Modifier.weight(1f),
             )
             FilledTonalIconButton(onClick = { onPreview(style) }, enabled = message.isNotBlank()) {
@@ -364,7 +362,7 @@ private fun VoiceMessageSection(
                 ChoiceRow(
                     options = (0 until voiceCount).map { it to "${it + 1}" },
                     selected = style.variant.coerceAtMost(voiceCount - 1),
-                    onSelect = { changeAndPreview(style.copy(variant = it)) },
+                    onSelect = { onStyleChange(style.copy(variant = it)) },
                     modifier = Modifier.weight(1f),
                 )
             }
@@ -375,7 +373,6 @@ private fun VoiceMessageSection(
             Slider(
                 value = style.pitchHz.coerceIn(range),
                 onValueChange = { onStyleChange(style.copy(pitchHz = it)) },
-                onValueChangeFinished = { onPreview(style) },
                 valueRange = range,
                 steps = ((range.endInclusive - range.start) / PITCH_STEP_HZ).toInt() - 1,
                 modifier = Modifier.weight(1f),
@@ -424,7 +421,7 @@ private fun <T> ChoiceRow(
 }
 
 @Composable
-private fun CountryCodeField(selected: Country, onSelect: (Country) -> Unit) {
+fun CountryCodeField(selected: Country, onSelect: (Country) -> Unit) {
     var open by remember { mutableStateOf(false) }
     Box {
         OutlinedTextField(
