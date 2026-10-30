@@ -9,6 +9,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -25,6 +27,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -53,7 +56,11 @@ import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
-/** Adds a text message to the phone's Messages app, unread, dated at any day and time. */
+/**
+ * Adds a text message to the phone's Messages app without sending it, dated at any day and
+ * time, as a received, sent, draft, outbox or failed message.
+ */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun SimulateSmsSection(isDefaultSmsApp: Boolean) {
     val context = LocalContext.current
@@ -64,6 +71,7 @@ fun SimulateSmsSection(isDefaultSmsApp: Boolean) {
     var number by rememberSaveable { mutableStateOf("") }
     var countryIso by rememberSaveable { mutableStateOf(Countries.guessIso(context)) }
     var sentAt by rememberSaveable { mutableLongStateOf(System.currentTimeMillis()) }
+    var smsType by rememberSaveable { mutableStateOf(SmsType.INBOX) }
     var messageError by rememberSaveable { mutableStateOf(false) }
     var numberError by rememberSaveable { mutableStateOf(false) }
 
@@ -82,15 +90,15 @@ fun SimulateSmsSection(isDefaultSmsApp: Boolean) {
     }
 
     fun addMessage(becomeSmsApp: () -> Unit) {
-        val fullNumber = PhoneNumbers.withCountryCode(Countries.byIso(countryIso).code, number)
+        val address = senderAddress(Countries.byIso(countryIso).code, number)
         messageError = message.isBlank()
-        numberError = fullNumber == null
-        if (messageError || fullNumber == null) return
+        numberError = address == null
+        if (messageError || address == null) return
         if (!SmsWriter.isDefaultSmsApp(context)) return becomeSmsApp()
 
         scope.launch {
             val added = withContext(Dispatchers.IO) {
-                SmsWriter.addToInbox(context, fullNumber, message.trim(), sentAt)
+                SmsWriter.add(context, address, message.trim(), sentAt, smsType)
             }
             if (!added) {
                 Toast.makeText(context, "Couldn't add the SMS", Toast.LENGTH_SHORT).show()
@@ -119,7 +127,7 @@ fun SimulateSmsSection(isDefaultSmsApp: Boolean) {
         Column {
             Text("Simulate SMS", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
             Text(
-                "Adds an unread text to your Messages app, at any date and time.",
+                "Creates a text in your Messages app at any date and time. It isn't sent to anyone.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -169,16 +177,39 @@ fun SimulateSmsSection(isDefaultSmsApp: Boolean) {
                     senderName = ""
                     numberError = false
                 },
-                label = { Text("Sender number") },
+                label = { Text("Number or name") },
                 isError = numberError,
-                supportingText = { Text(if (numberError) "Enter a phone number" else "Or type the full number starting with +") },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                supportingText = {
+                    Text(
+                        if (numberError) "Enter a phone number or a name"
+                        else "A number, a full number starting with +, or a name like AX-HDFCBK",
+                    )
+                },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
                 singleLine = true,
                 modifier = Modifier.weight(1f),
             )
         }
 
         SentAtPicker(sentAt, onChange = { sentAt = it })
+
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Message type", style = MaterialTheme.typography.titleMedium)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                SmsType.entries.forEach { type ->
+                    FilterChip(
+                        selected = type == smsType,
+                        onClick = { smsType = type },
+                        label = { Text(type.label) },
+                    )
+                }
+            }
+            Text(
+                smsType.description,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
 
         Button(
             onClick = {
@@ -198,7 +229,17 @@ fun SimulateSmsSection(isDefaultSmsApp: Boolean) {
     }
 }
 
-/** Date and time the message shows as received; past, present or future. */
+/**
+ * The sender as Messages stores it: a phone number in international form, or the text as
+ * typed when it has letters, like the sender names banks use ("AX-HDFCBK").
+ */
+private fun senderAddress(countryCode: String, input: String): String? {
+    val trimmed = input.trim()
+    if (trimmed.any { it.isLetter() }) return trimmed
+    return PhoneNumbers.withCountryCode(countryCode, trimmed)
+}
+
+/** Date and time the message shows in Messages; past, present or future. */
 @Composable
 private fun SentAtPicker(sentAt: Long, onChange: (Long) -> Unit) {
     val context = LocalContext.current
@@ -208,7 +249,7 @@ private fun SentAtPicker(sentAt: Long, onChange: (Long) -> Unit) {
 
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Received at", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+            Text("Date and time of message", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
             TextButton(onClick = { onChange(System.currentTimeMillis()) }) { Text("Now") }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

@@ -52,20 +52,41 @@ object SmsWriter {
 
     private const val KEY_PREVIOUS_SMS_APP = "previous_sms_app"
 
-    /** Adds an unread message to the inbox, dated [date]. */
-    fun addToInbox(context: Context, address: String, body: String, date: Long, dateSent: Long = date): Boolean {
+    /** Adds a message of [type] to Messages, dated [date]. Received messages are left unread. */
+    fun add(
+        context: Context,
+        address: String,
+        body: String,
+        date: Long,
+        type: SmsType = SmsType.INBOX,
+        dateSent: Long = date,
+    ): Boolean {
+        val unread = type == SmsType.INBOX
         val values = ContentValues().apply {
             put(Telephony.Sms.ADDRESS, address)
             put(Telephony.Sms.BODY, body)
             put(Telephony.Sms.DATE, date)
             put(Telephony.Sms.DATE_SENT, dateSent)
-            put(Telephony.Sms.READ, 0)
-            put(Telephony.Sms.SEEN, 0)
-            put(Telephony.Sms.TYPE, Telephony.Sms.MESSAGE_TYPE_INBOX)
+            put(Telephony.Sms.READ, if (unread) 0 else 1)
+            put(Telephony.Sms.SEEN, if (unread) 0 else 1)
+            put(Telephony.Sms.TYPE, type.providerType)
         }
-        return runCatching { context.contentResolver.insert(Telephony.Sms.Inbox.CONTENT_URI, values) != null }
+        return runCatching { context.contentResolver.insert(Telephony.Sms.CONTENT_URI, values) != null }
             .getOrDefault(false)
     }
+}
+
+/** Where the message shows up in Messages. */
+enum class SmsType(val label: String, val description: String, val providerType: Int) {
+    INBOX("Inbox", "A received text, left unread.", Telephony.Sms.MESSAGE_TYPE_INBOX),
+    SENT("Sent", "A text you sent.", Telephony.Sms.MESSAGE_TYPE_SENT),
+    DRAFT("Draft", "An unsent draft.", Telephony.Sms.MESSAGE_TYPE_DRAFT),
+    OUTBOX(
+        "Outbox",
+        "A text waiting to send. Messages might try to send it for real, so use a number you don't mind texting.",
+        Telephony.Sms.MESSAGE_TYPE_OUTBOX,
+    ),
+    FAILED("Failed", "A text that failed to send.", Telephony.Sms.MESSAGE_TYPE_FAILED),
 }
 
 /** Saves real texts that arrive while this app is briefly the SMS app, so none are lost. */
@@ -73,7 +94,7 @@ class SmsDeliverReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val parts = Telephony.Sms.Intents.getMessagesFromIntent(intent) ?: return
         val first = parts.firstOrNull() ?: return
-        SmsWriter.addToInbox(
+        SmsWriter.add(
             context,
             address = first.displayOriginatingAddress.orEmpty(),
             body = parts.joinToString("") { it.displayMessageBody.orEmpty() },
